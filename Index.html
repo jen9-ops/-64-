@@ -1,0 +1,272 @@
+<!DOCTYPE html><html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Віртуальний процесор</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(to bottom, #ffe8a0, #fff3cc);
+      font-family: 'Comic Sans MS', cursive, sans-serif;
+      text-align: center;
+      color: #333;
+    }
+    h1 {
+      margin-top: 20px;
+      font-size: 2em;
+      color: #f9a825;
+    }
+    .chip {
+      background: rgba(255,255,255,0.8);
+      border: 2px solid #fbc02d;
+      border-radius: 12px;
+      padding: 10px;
+      width: 90%;
+      max-width: 800px;
+      margin: 10px auto;
+    }
+    .chip h3 {
+      margin: 5px 0 10px;
+    }
+    .state {
+      font-size: 1.1em;
+      font-weight: bold;
+      color: #2e7d32;
+      word-break: break-word;
+    }
+    .mem-cell {
+      display: inline-block;
+      margin: 1px;
+      padding: 4px;
+      min-width: 36px;
+      background: #fff;
+      border: 1px solid #bbb;
+      border-radius: 5px;
+      font-family: monospace;
+    }
+    .mem-cell.active {
+      background: #fdd835;
+      border-color: #f9a825;
+    }
+    select, input[type="text"], input[type="number"], textarea {
+      padding: 5px;
+      font-size: 1em;
+      width: 90%;
+      margin: 5px 0;
+    }
+    button {
+      margin: 5px;
+      padding: 10px 15px;
+      font-size: 1em;
+      background-color: #fdd835;
+      color: #000;
+      border: 2px solid #fbc02d;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #fbc02d;
+    }
+    .console {
+      background: #111;
+      color: #0f0;
+      font-family: monospace;
+      padding: 10px;
+      margin: 20px auto;
+      width: 90%;
+      max-width: 800px;
+      height: 180px;
+      overflow-y: auto;
+      border: 2px solid #444;
+      border-radius: 10px;
+      text-align: left;
+    }
+    .grid-buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+      gap: 5px;
+      justify-items: center;
+    }
+  </style>
+</head>
+<body><h1>🧠 Віртуальний процесор</h1>
+<p>Симуляція простого процесора з 64 байтами памʼяті, інструкціями та власною мовою</p><div class="chip" id="clock">
+  <h3>⏱️ Тактовий генератор</h3>
+  <div class="state" id="clockState">Очікує...</div>
+</div><div class="chip">
+  <h3>Регістр</h3>
+  <div class="state" id="register">0</div>
+</div><div class="chip">
+  <h3>Памʼять (64 байти)</h3>
+  <div class="state" id="memoryDisplay"></div>
+</div><div class="chip">
+  <h3>Інструкція</h3>
+  <input type="text" id="instruction" placeholder="LOAD 2 / ADD 1 / STORE 0">
+  <div class="state" id="instStatus">Очікує...</div>
+</div><div>
+  <button id="runButton">▶ Виконати вручну</button>
+  <button id="autoRun">▶ Автоматично</button>
+  <button id="stopRun">⏹ Зупинити</button>
+  <button onclick="printText()">📤 Вивести текст</button>
+</div><div class="chip">
+  <h3>📱 Керування регістром</h3>
+  <input type="number" id="regInput" placeholder="Код символу (напр. 1087)">
+  <button onclick="setRegister()">🔢 Встановити в регістр</button>
+  <div class="grid-buttons" id="storeButtons"></div>
+</div><div class="chip">
+  <h3>🧾 Програма (власна мова)</h3>
+  <textarea id="program" rows="6" placeholder="SET 0 = 1087\nSET 1 = 1088\nADD 0 1 -> 2\nIF MEM[2] == 2175 THEN PRINT 'пока'"></textarea>
+  <button onclick="runProgram()">🚀 Запустити програму</button>
+</div><div class="console" id="console"></div><script>
+let memory = new Array(64).fill(0);
+let register = 0;
+let clockOn = false;
+let clockInterval = null;
+let lastAccess = -1;
+const consoleEl = document.getElementById('console');
+const memoryDisplay = document.getElementById('memoryDisplay');
+const storeButtonsContainer = document.getElementById('storeButtons');
+
+function logToConsole(message) {
+  const time = new Date().toLocaleTimeString();
+  consoleEl.innerHTML += `[${time}] ${message}<br>`;
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+function update() {
+  memoryDisplay.innerHTML = '';
+  memory.forEach((v, i) => {
+    const cell = document.createElement('span');
+    cell.className = 'mem-cell' + (i === lastAccess ? ' active' : '');
+    cell.innerText = `${i}:${v}`;
+    memoryDisplay.appendChild(cell);
+  });
+  document.getElementById('register').innerText = register;
+}
+
+function executeInstruction(instrText) {
+  let instr = (instrText || document.getElementById('instruction').value).trim().toUpperCase();
+  let parts = instr.split(" ");
+  let cmd = parts[0];
+  let arg = parseInt(parts[1]);
+  let status = '✔️ OK';
+
+  try {
+    switch (cmd) {
+      case 'LOAD':
+        if (arg >= 0 && arg < memory.length) {
+          register = memory[arg];
+          lastAccess = arg;
+          logToConsole(`LOAD ${arg} → ${register}`);
+        } else throw 'Невірна адреса LOAD';
+        break;
+      case 'ADD':
+        if (arg >= 0 && arg < memory.length) {
+          register += memory[arg];
+          lastAccess = arg;
+          logToConsole(`ADD ${arg} → ${register}`);
+        } else throw 'Невірна адреса ADD';
+        break;
+      case 'STORE':
+        if (arg >= 0 && arg < memory.length) {
+          memory[arg] = register;
+          lastAccess = arg;
+          logToConsole(`STORE ${arg} ← ${register}`);
+        } else throw 'Невірна адреса STORE';
+        break;
+      default:
+        throw 'Невідома інструкція';
+    }
+  } catch (err) {
+    status = '❌ ' + err;
+    logToConsole(status);
+  }
+
+  document.getElementById('instStatus').innerText = status;
+  update();
+}
+
+function printText() {
+  const text = memory.map(v => v > 0 ? String.fromCharCode(v) : '').join('');
+  logToConsole('📤 Вивід: ' + text);
+}
+
+function setRegister() {
+  const val = parseInt(document.getElementById("regInput").value);
+  if (!isNaN(val)) {
+    register = val;
+    logToConsole('🔢 Регістр = ' + val);
+    update();
+  } else {
+    logToConsole('❌ Невірне значення для регістра');
+  }
+}
+
+function storeTo(addr) {
+  if (addr >= 0 && addr < memory.length) {
+    memory[addr] = register;
+    lastAccess = addr;
+    logToConsole(`💾 STORE ${addr} ← ${register}`);
+    update();
+  }
+}
+
+function createStoreButtons() {
+  for (let i = 0; i < 64; i++) {
+    const btn = document.createElement('button');
+    btn.textContent = `STORE ${i}`;
+    btn.onclick = () => storeTo(i);
+    storeButtonsContainer.appendChild(btn);
+  }
+}
+
+function runProgram() {
+  const lines = document.getElementById('program').value.trim().split(/\n+/);
+  lines.forEach(line => {
+    const cmd = line.trim();
+    if (cmd.startsWith('SET')) {
+      const [, addr, val] = cmd.match(/SET (\d+) = (\d+)/);
+      memory[+addr] = +val;
+      logToConsole(`SET ${addr} = ${val}`);
+    } else if (cmd.startsWith('ADD')) {
+      const [, a, b, c] = cmd.match(/ADD (\d+) (\d+) -> (\d+)/);
+      memory[+c] = memory[+a] + memory[+b];
+      logToConsole(`ADD ${a} + ${b} -> ${c}`);
+    } else if (cmd.startsWith('PRINT ')) {
+      const text = cmd.match(/PRINT ['"](.+)['"]/)[1];
+      logToConsole('🖨 ' + text);
+    } else if (cmd.startsWith('PRINTMEM')) {
+      const [, index] = cmd.match(/PRINTMEM (\d+)/);
+      const v = memory[+index];
+      logToConsole('🧠 MEM[' + index + '] = ' + v + ' → ' + String.fromCharCode(v));
+    } else if (cmd === 'PRINTALL') {
+      printText();
+    } else if (cmd.startsWith('IF')) {
+      const m = cmd.match(/IF MEM(\d+) == (\d+) THEN PRINT ['"](.+)['"]/);
+      if (m && memory[+m[1]] == +m[2]) {
+        logToConsole('🧾 Умова виконується: ' + m[3]);
+      }
+    }
+  });
+  update();
+}
+
+document.getElementById('runButton').addEventListener('click', () => executeInstruction());
+document.getElementById('autoRun').addEventListener('click', () => {
+  if (!clockOn) {
+    clockOn = true;
+    document.getElementById('clockState').innerText = '⏳ Працює...';
+    clockInterval = setInterval(() => executeInstruction(), 1000);
+  }
+});
+document.getElementById('stopRun').addEventListener('click', () => {
+  clockOn = false;
+  document.getElementById('clockState').innerText = '⏹ Зупинено';
+  clearInterval(clockInterval);
+});
+
+createStoreButtons();
+update();
+</script></body>
+</html>
